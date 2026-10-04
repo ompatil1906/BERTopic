@@ -2192,6 +2192,10 @@ class BERTopic:
 
         # Check if -1 exists in the current topics
         had_outliers = -1 in set(self.topics_)
+        # List labels are aligned with sorted topic ids at the start of this call.
+        custom_label_topics = None
+        if getattr(self, "custom_labels_", None) is not None and not isinstance(self.custom_labels_, dict):
+            custom_label_topics = sorted(set(self.topics_))
 
         # If adding -1 for the first time, initialize its attributes
         if not had_outliers and any(topic in topics_to_delete for topic in self.topics_):
@@ -2215,9 +2219,15 @@ class BERTopic:
                 outlier_image = np.zeros((1, self.representative_images_.shape[1]))
                 self.representative_images_ = np.vstack([outlier_image, self.representative_images_])
 
-            # Initialize custom labels for -1 topic if they exist
+            # Initialize custom labels for -1 topic if they exist.
+            # set_topic_labels stores a list aligned with sorted topic ids, so the
+            # new outlier label belongs at the front, not in the last slot.
             if hasattr(self, "custom_labels_") and self.custom_labels_ is not None:
-                self.custom_labels_[-1] = ""
+                if isinstance(self.custom_labels_, dict):
+                    self.custom_labels_[-1] = ""
+                else:
+                    self.custom_labels_.insert(0, "")
+                    custom_label_topics = [-1] + custom_label_topics
 
             # Initialize ctfidf model diagonal for -1 topic (ones) if it exists
             if hasattr(self, "ctfidf_model") and self.ctfidf_model is not None:
@@ -2268,14 +2278,22 @@ class BERTopic:
             }
             self.topic_aspects_ = new_aspects
 
-        # Update custom labels if they exist
+        # Update custom labels if they exist.
+        # custom_labels_ is a list aligned with sorted topic ids (see
+        # set_topic_labels and get_topic_info). A dict is accepted because
+        # earlier versions of this method stored one.
         if hasattr(self, "custom_labels_") and self.custom_labels_ is not None:
+            if isinstance(self.custom_labels_, dict):
+                labels_by_topic = dict(self.custom_labels_)
+            else:
+                labels_by_topic = dict(zip(custom_label_topics, self.custom_labels_))
             new_labels = {
                 (final_mapping[old_topic] if old_topic != -1 else -1): label
-                for old_topic, label in self.custom_labels_.items()
-                if old_topic not in topics_to_delete
+                for old_topic, label in labels_by_topic.items()
+                if old_topic not in topics_to_delete and (old_topic == -1 or old_topic in final_mapping)
             }
-            self.custom_labels_ = new_labels
+            # Keep the list contract used by set_topic_labels and get_topic_info.
+            self.custom_labels_ = [new_labels[topic] for topic in sorted(new_labels)]
 
         # Update topic representations
         new_representations = {

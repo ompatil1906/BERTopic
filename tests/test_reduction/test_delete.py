@@ -57,3 +57,41 @@ def test_delete(model, request):
         assert mapped_labels == topic_model.topics_[950:]
     else:
         assert mapped_labels == topic_model.topics_
+
+
+def test_delete_topics_with_custom_labels(base_topic_model):
+    """custom_labels_ is a list; delete_topics must not call dict.items on it.
+
+    Regression for https://github.com/MaartenGr/BERTopic/issues/2529
+    """
+    topic_model = copy.deepcopy(base_topic_model)
+    original_topics = sorted(set(topic_model.topics_))
+    labels = [f"label-{topic}" for topic in original_topics]
+    topic_model.set_topic_labels(labels)
+
+    deleted = 1 if 1 in original_topics else original_topics[-1]
+    topic_model.delete_topics([deleted])
+
+    assert isinstance(topic_model.custom_labels_, list)
+    info = topic_model.get_topic_info()
+    assert len(topic_model.custom_labels_) == len(info)
+    assert f"label-{deleted}" not in topic_model.custom_labels_
+    # Outlier label is inserted, not written over the last remaining label.
+    if -1 not in original_topics:
+        assert topic_model.custom_labels_[0] == ""
+        assert "label-" + str(original_topics[-1]) in topic_model.custom_labels_ or deleted == original_topics[-1]
+    kept = [topic for topic in original_topics if topic != deleted]
+    for topic in kept:
+        assert f"label-{topic}" in topic_model.custom_labels_
+
+
+def test_delete_topics_accepts_legacy_custom_label_dict(base_topic_model):
+    topic_model = copy.deepcopy(base_topic_model)
+    original_topics = sorted(set(topic_model.topics_))
+    topic_model.custom_labels_ = {topic: f"label-{topic}" for topic in original_topics}
+    deleted = 1 if 1 in original_topics else original_topics[-1]
+    topic_model.delete_topics([deleted])
+
+    assert isinstance(topic_model.custom_labels_, list)
+    assert f"label-{deleted}" not in topic_model.custom_labels_
+    assert len(topic_model.custom_labels_) == len(topic_model.get_topic_info())
